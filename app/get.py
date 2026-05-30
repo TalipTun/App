@@ -63,6 +63,27 @@ def get_user_repos(username: str):
         "remaining_requests": response.headers.get("X-RateLimit-Remaining")
     }
 
+@app.get("/users/{username}/{repo}/commits")
+def get_user_repo_commits(username: str, repo: str):
+    response = github_get(f"https://api.github.com/repos/{username}/{repo}/commits")
+    commits = response.json()
+
+    cleaned_commits = []
+
+    for commit in commits:
+
+        message = commit["commit"]["message"]
+        date = commit["commit"]["committer"]["date"]
+
+        cleaned_commits.append({
+            "date" : date,
+            "message" : message,
+        })
+
+    return {
+        "commits" : cleaned_commits
+    }
+
 def github_get(url):
     headers = {
         "Authorization": f"Bearer {get_github_token()}",
