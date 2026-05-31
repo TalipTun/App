@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 WORKDIR /code
 
-RUN pip install fastapi "uvicorn[standard]" requests
+RUN pip install fastapi "uvicorn[standard]" requests datetime
 
 COPY ./app /code/app
 

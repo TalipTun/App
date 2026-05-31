@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 import requests
+from datetime import datetime, timezone, timedelta
 
 app = FastAPI()
 
@@ -63,17 +64,39 @@ def get_user_repos(username: str):
         "remaining_requests": response.headers.get("X-RateLimit-Remaining")
     }
 
+def convert(date_time):
+    format = '%b %d %Y %I:%M%p'
+    datetime_str = datetime.datetime.strptime(date_time, format)
+    return datetime_str
+
 @app.get("/users/{username}/{repo}/commits")
 def get_user_repo_commits(username: str, repo: str):
     response = github_get(f"https://api.github.com/repos/{username}/{repo}/commits")
     commits = response.json()
 
     cleaned_commits = []
+    now = datetime.now(timezone.utc)
+
+    daily_cutoff = now - timedelta(days=1)
+    weekly_cutoff = now - timedelta(days=7)
+    monthly_cutoff = now - timedelta(days=30)
+
+    dayCount = 0
+    weekCount = 0
+    monthCount = 0
 
     for commit in commits:
-
         message = commit["commit"]["message"]
-        date = commit["commit"]["committer"]["date"]
+        date = datetime.fromisoformat(
+            commit["commit"]["committer"]["date"].replace("Z", "+00:00")
+        )
+
+        if date > daily_cutoff:
+            dayCount += 1
+        if date > weekly_cutoff:
+            weekCount += 1
+        if date > monthly_cutoff:
+            monthCount += 1
 
         cleaned_commits.append({
             "date" : date,
@@ -81,7 +104,11 @@ def get_user_repo_commits(username: str, repo: str):
         })
 
     return {
-        "commits" : cleaned_commits
+        "commits" : cleaned_commits,
+        "count" : len(cleaned_commits),
+        "last 24h" : dayCount,
+        "last week" : weekCount,
+        "last month" : monthCount,
     }
 
 def github_get(url):
