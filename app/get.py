@@ -1,8 +1,12 @@
 from fastapi import FastAPI
 import requests
 from datetime import datetime, timezone, timedelta
+from app.database import engine
+from app.models import Base
 
 app = FastAPI()
+
+Base.metadata.create_all(bind=engine)
 
 @app.get("/")
 def read_root():
