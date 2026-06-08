@@ -138,6 +138,86 @@ def get_user_repo_commits(username: str, repo: str):
     finally: 
         session.close()
 
+@app.post("/users/{username}/sync")
+def get_all_commits(username: str):
+    #
+    session = SessionLocal()
+    try:
+        response = github_get(f"https://api.github.com/users/{username}/repos")
+        repos = response.json()
+
+        total_repos_checked = 0
+        total_commit_count = 0
+        total_inserted = 0
+        total_skipped = 0
+        failed_repos = []
+
+        for repo in repos:
+            repo_name = repo["name"]
+            total_repos_checked += 1
+
+            commits_response = github_get(
+                f"https://api.github.com/repos/{username}/{repo_name}/commits"
+            )
+            commits = commits_response.json()
+
+
+            if commits_response.status_code != 200:
+                failed_repos.append({
+                    "repo": repo_name,
+                    "status_code": commits_response.status_code,
+                    "response": commits_response.json()
+                })
+                continue
+
+            commits = commits_response.json()
+
+            if not isinstance(commits, list):
+                failed_repos.append({
+                    "repo": repo_name,
+                    "status_code": commits_response.status_code,
+                    "response": commits
+                })
+                continue
+
+            for commit in commits:
+                sha = commit["sha"]
+
+                committed_at = datetime.fromisoformat(
+                    commit["commit"]["committer"]["date"].replace("Z", "+00:00")
+                )
+                total_commit_count += 1
+
+                existing_commit = session.execute(
+                    select(Commit).where(Commit.sha == sha)
+                ).scalar_one_or_none()
+
+                if existing_commit is None:
+                    new_commit = Commit(
+                        username=username,
+                        repo_name=repo_name,
+                        committed_at=committed_at,
+                        sha=sha
+                    )
+
+                    session.add(new_commit)
+                    total_inserted += 1
+                else:
+                    total_skipped += 1
+
+        session.commit()
+
+        return {
+            "username": username,
+            "repos_checked": total_repos_checked,
+            "commits_fetched": total_commit_count,
+            "inserted": total_inserted,
+            "skipped": total_skipped,
+            "failed_repos": failed_repos
+        }
+    finally:
+        session.close()
+
 def github_get(url):
     headers = {
         "Authorization": f"Bearer {get_github_token()}",
