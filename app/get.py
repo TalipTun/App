@@ -1,8 +1,11 @@
-from fastapi import FastAPI
-import requests
+from fastapi import FastAPI # type: ignore
+import requests # type: ignore
 from datetime import datetime, timezone, timedelta
 from app.database import engine
 from app.models import Base
+from app.database import SessionLocal # type: ignore
+from app.models import Commit
+from sqlalchemy import select
 
 app = FastAPI()
 
@@ -75,45 +78,65 @@ def convert(date_time):
 
 @app.get("/users/{username}/{repo}/commits")
 def get_user_repo_commits(username: str, repo: str):
-    response = github_get(f"https://api.github.com/repos/{username}/{repo}/commits")
-    commits = response.json()
 
-    cleaned_commits = []
-    now = datetime.now(timezone.utc)
+    try:
+        response = github_get(f"https://api.github.com/repos/{username}/{repo}/commits")
+        commits = response.json()
+        session = SessionLocal()
+        now = datetime.now(timezone.utc)
 
-    daily_cutoff = now - timedelta(days=1)
-    weekly_cutoff = now - timedelta(days=7)
-    monthly_cutoff = now - timedelta(days=30)
+        daily_cutoff = now - timedelta(days=1)
+        weekly_cutoff = now - timedelta(days=7)
+        monthly_cutoff = now - timedelta(days=30)
 
-    dayCount = 0
-    weekCount = 0
-    monthCount = 0
+        dayCount = 0
+        weekCount = 0
+        monthCount = 0
 
-    for commit in commits:
-        message = commit["commit"]["message"]
-        date = datetime.fromisoformat(
-            commit["commit"]["committer"]["date"].replace("Z", "+00:00")
-        )
+        for commit in commits:
+            # message = commit["commit"]["message"] 
+            sha = commit["sha"]
+            date = datetime.fromisoformat(
+                commit["commit"]["committer"]["date"].replace("Z", "+00:00")
+            )
 
-        if date > daily_cutoff:
-            dayCount += 1
-        if date > weekly_cutoff:
-            weekCount += 1
-        if date > monthly_cutoff:
-            monthCount += 1
+            if date > daily_cutoff:
+                dayCount += 1
+            if date > weekly_cutoff:
+                weekCount += 1
+            if date > monthly_cutoff:
+                monthCount += 1
 
-        cleaned_commits.append({
-            "date" : date,
-            "message" : message,
-        })
+            existing_commit = session.execute(
+                select(Commit).where(Commit.sha == sha)
+            ).scalar_one_or_none()
 
-    return {
-        "commits" : cleaned_commits,
-        "count" : len(cleaned_commits),
-        "last 24h" : dayCount,
-        "last week" : weekCount,
-        "last month" : monthCount,
-    }
+            if existing_commit is None:
+                newCommit = Commit(
+                    username=username,
+                    repo_name=repo,
+                    committed_at=date,
+                    sha=sha
+                )
+
+                session.add(newCommit)
+
+        session.commit()
+
+        stmt = select(Commit)
+        result = session.execute(stmt)
+        sqlCommits = result.scalars().all()
+
+        return {
+            "count" : len(sqlCommits),
+            "last 24h" : dayCount,
+            "last week" : weekCount,
+            "last month" : monthCount,
+            "SQLCOMMITS" : sqlCommits
+        }
+
+    finally: 
+        session.close()
 
 def github_get(url):
     headers = {

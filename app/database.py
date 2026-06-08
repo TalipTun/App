@@ -1,5 +1,5 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import create_engine # type: ignore
+from sqlalchemy.orm import declarative_base, sessionmaker # type: ignore
 from urllib.parse import quote_plus
 
 def get_postgres_password():
