@@ -218,6 +218,44 @@ def get_all_commits(username: str):
     finally:
         session.close()
 
+@app.get("/users/{username}/stats")
+def get_user_stats(username : str):
+    session = SessionLocal()
+
+    try:
+        stmt = select(Commit).where(Commit.username == username)
+        user_commits = session.execute(stmt).scalars().all()
+
+        now = datetime.now(timezone.utc)
+
+        daily_cutoff = now - timedelta(days=1)
+        weekly_cutoff = now - timedelta(days=7)
+        monthly_cutoff = now - timedelta(days=30)
+
+        dayCount = 0
+        weekCount = 0
+        monthCount = 0
+
+        for commit in user_commits:
+            date = commit.committed_at
+
+            if date > daily_cutoff:
+                dayCount += 1
+            if date > weekly_cutoff:
+                weekCount += 1
+            if date > monthly_cutoff:
+                monthCount += 1
+
+        return {
+            "username": username,
+            "total_commits": len(user_commits),
+            "dayCount": dayCount,
+            "weekCount": weekCount,
+            "monthCount": monthCount,
+        }
+    finally:
+        session.close()
+
 def github_get(url):
     headers = {
         "Authorization": f"Bearer {get_github_token()}",
