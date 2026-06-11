@@ -5,7 +5,7 @@ from app.database import engine
 from app.models import Base
 from app.database import SessionLocal # type: ignore
 from app.models import Commit
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 app = FastAPI()
 
@@ -255,6 +255,51 @@ def get_user_stats(username : str):
         }
     finally:
         session.close()
+
+@app.get("/leaderboard")
+def get_leaderboard():
+    session = SessionLocal()
+
+    try:
+        now = datetime.now(timezone.utc)
+
+        daily_cutoff = now - timedelta(days=1)
+        weekly_cutoff = now - timedelta(days=7)
+        monthly_cutoff = now - timedelta(days=30)
+
+        daily = get_leaderboard_cutoff(session, daily_cutoff)
+        weekly = get_leaderboard_cutoff(session, weekly_cutoff)
+        monthly = get_leaderboard_cutoff(session, monthly_cutoff)
+
+        return {
+            "daily": daily,
+            "weekly": weekly,
+            "monthly": monthly
+        }
+
+    finally:
+        session.close()
+
+def get_leaderboard_cutoff(session, cutoff):
+    stmt = (
+        select(
+            Commit.username,
+            func.count().label("commits")
+        )
+        .where(Commit.committed_at >= cutoff)
+        .group_by(Commit.username)
+        .order_by(func.count().desc())
+    )
+
+    rows = session.execute(stmt).all()
+
+    return [
+        {
+            "username": row.username,
+            "commits": row.commits
+        }
+        for row in rows
+    ]
 
 def github_get(url):
     headers = {
